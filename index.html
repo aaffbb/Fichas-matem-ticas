@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Hojas de Matemáticas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Estilos para el modal de alerta personalizado */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-backdrop.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 90%;
+            width: 400px;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .modal-backdrop.visible .modal-content {
+            transform: scale(1);
+        }
+        /* Clase para ocultar visualmente el checkmark si es necesario */
+        .check-icon {
+            display: inline-block;
+            margin-left: 0.5rem;
+        }
+        .control-button.selected .check-icon {
+            display: inline-block;
+        }
+        .control-button:not(.selected) .check-icon {
+            display: none;
+        }
+        /* Estilos específicos para las series */
+        .series-problem {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start; /* Alinea al inicio para que no se estire */
+            flex-wrap: nowrap; /* !IMPORTANT: Prevents wrapping to next line */
+            gap: 0.4rem; /* Espacio entre los elementos de la serie, ligeramente reducido */
+            font-family: 'Inter', sans-serif; /* Fuente consistente */
+            font-size: 1.25rem; /* Ajuste para que quepa bien */
+            padding: 0.5rem 0;
+            overflow-x: auto; /* Permite desplazamiento si la serie es demasiado larga (como fallback) */
+        }
+        .series-number-box {
+            border: 2px solid #333; /* Más grueso y más oscuro */
+            padding: 0.45rem 0.7rem 0.35rem 0.7rem; /* Adjusted padding: top, right, bottom, left */
+            border-radius: 0.5rem;
+            min-width: 4.2rem; /* Reduced min-width */
+            height: 2.7rem; /* Reduced height slightly */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: 500;
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.05);
+            background-color: #e0e0e0; /* Un gris claro sutil */
+            color: #1a1a1a; /* Texto más oscuro dentro de la caja */
+            box-sizing: border-box; /* Added for consistent sizing */
+            line-height: 1; /* Ensure text sits well */
+            font-size: 1.2rem; /* Slightly reduced font size */
+        }
+        .series-arrow {
+            font-weight: bold;
+            color: #333; /* Más oscuro */
+            font-size: 1.3rem; /* Ligeramente más grande */
+        }
+        .series-pattern-op {
+            color: #1a1a1a; /* Casi negro */
+            font-weight: bolder; /* Más negrita */
+            font-size: 1.15rem; /* Un poco más pequeño */
+            min-width: 2.3rem; /* Reduced min-width */
+            text-align: center;
+        }
+        /* Ajuste para el grid de problemas para que las series ocupen todo el ancho si es necesario */
+        .problems-container-series {
+            display: flex; /* Usamos flex para que cada serie ocupe todo el ancho */
+            flex-direction: column;
+            gap: 1.5rem; /* Espacio entre cada serie, ajustado para 12 series */
+            /* Quitar las propiedades de grid para que las series se expandan horizontalmente */
+            grid-template-columns: none !important; 
+        }
+        .problems-container-normal {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 2rem; /* Espacio entre problemas normales */
+        }
+
+        /* Nuevos estilos para problemas normales (sumas, restas, multiplicaciones) */
+        .problem-math-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end; /* Alinea todo el bloque a la derecha */
+            font-size: 2rem; /* Tamaño de fuente base */
+            line-height: 1.2;
+            width: fit-content; /* Se ajusta al contenido */
+            margin-left: auto; /* Centra el problema en su celda */
+            margin-right: auto;
+            padding-bottom: 0.5rem; /* Espacio al final */
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; /* Fuente monoespaciada para alineación de dígitos */
+        }
+
+        .problem-line {
+            display: flex;
+            justify-content: flex-end; /* Alinea los números a la derecha */
+            width: 100%; /* Ocupa el ancho del wrapper */
+        }
+
+        .number-operand-top {
+            text-align: right;
+            min-width: 6ch; 
+        }
+
+        .problem-line-bottom {
+            margin-top: -0.2rem; /* Ajusta la cercanía de la segunda línea a la primera */
+            padding-bottom: 0.8rem; /* Espacio entre el número inferior y la línea (~1mm) */
+            border-bottom: 2px solid #333; /* La línea inferior */
+            position: relative; /* Para que el operador pueda posicionarse */
+            width: 100%; /* La línea abarcará esta fila */
+            display: flex; /* Para controlar el posicionamiento del operador y el número */
+            justify-content: flex-end; /* Alinea el contenido de esta línea a la derecha */
+        }
+
+        .operator-operand {
+            flex-shrink: 0; /* Evita que se encoja */
+            text-align: left; /* Alinea el símbolo dentro de su propio espacio */
+            width: 1.5rem; /* Ancho fijo para el operador, ajustado para 2mm de margen */
+            padding-right: 0.1rem; /* Pequeño espacio para separar del número */
+            font-size: 1.5rem; /* Tamaño del operador */
+            color: #1a1a1a; /* Color oscuro */
+        }
+
+        .number-operand-bottom {
+            text-align: right;
+            flex-grow: 1; /* Permite que el número ocupe el resto del espacio */
+            min-width: 5ch; 
+        }
+
+        .result-line-display {
+            text-align: right;
+            font-weight: bold;
+            color: #1a1a1a;
+            margin-top: 0.5rem; /* Espacio entre la línea de resultado y el número */
+            width: 100%;
+        }
+
+        .empty-result-space {
+            display: block; /* Para que ocupe espacio y mantenga la estructura */
+            height: 1.5rem; /* Altura para el espacio vacío del resultado */
+            width: 100%;
+        }
+
+        /* Estilos específicos para las pirámides */
+        .pyramid-problem {
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centra cada capa horizontalmente */
+            gap: 0.5rem; /* Espacio entre capas */
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; /* Fuente monoespaciada */
+            font-size: 1.5rem; /* Tamaño de fuente para números de pirámide */
+            padding: 1rem 0;
+            margin-bottom: 1rem;
+            border: 1px solid #ddd;
+            border-radius: 0.75rem;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+            background-color: #f9f9f9;
+        }
+
+        .pyramid-layer {
+            display: flex;
+            justify-content: center; /* Centra los números dentro de la capa */
+            gap: 0.5rem; /* Espacio entre los números en la misma capa */
+            width: 100%;
+        }
+
+        .pyramid-number-box {
+            border: 2px solid #333; /* Estilo similar a las series */
+            padding: 0.4rem 0.6rem 0.2rem 0.6rem; /* Adjusted padding: top, right, bottom, left */
+            border-radius: 0.4rem;
+            min-width: 4.5rem;
+            height: 2.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: 500;
+            background-color: #e0e0e0;
+            color: #1a1a1a;
+            box-sizing: border-box; /* Added for consistent sizing */
+            line-height: 1; /* Ensure text sits well */
+            font-size: 1.5rem;
+        }
+
+        .pyramid-number-box.empty {
+            background-color: #ffffff; /* Fondo blanco para las casillas vacías */
+        }
+
+        /* Estilos para el indicador de carga */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1001; /* Mayor que el modal de alerta */
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .loading-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .loading-content {
+            background-color: white;
+            padding: 2rem 3rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .loading-overlay.visible .loading-content {
+            transform: scale(1);
+        }
+        .loading-icon {
+            font-size: 4rem; /* Tamaño del icono */
+            animation: spin 2s linear infinite; /* Animación de giro */
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Estilos para la tabla numérica (1-100 y Pitagórica) */
+        .number-grid-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.15rem; /* Espacio entre filas: 0.05rem * 3 */
+            padding: 0.6rem; /* Padding: 0.2rem * 3 */
+            border: 2px solid #666; /* Más fuerte */
+            border-radius: 0.75rem;
+            background-color: #fefefe;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            overflow-x: auto; /* Permite desplazamiento horizontal si la tabla es muy ancha */
+        }
+
+        .number-grid-row {
+            display: flex;
+            gap: 0.15rem; /* Espacio entre celdas: 0.05rem * 3 */
+        }
+
+        .number-grid-cell {
+            width: 5.1rem; /* Ancho fijo para las celdas: 1.7rem * 3 */
+            height: 5.1rem; /* Alto fijo para las celdas: 1.7rem * 3 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 2px solid #666; /* Más fuerte */
+            background-color: #fff;
+            font-size: 1.8rem; /* Fuente: 0.6rem * 3 */
+            font-weight: 500;
+            color: #333;
+            border-radius: 0.2rem; /* Borde más pequeño */
+            box-sizing: border-box; /* Incluir padding y border en el tamaño total */
+        }
+
+        .number-grid-cell input {
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            border: none;
+            background-color: transparent;
+            font-size: 1.8rem; /* Fuente para input: 0.6rem * 3 */
+            font-weight: 500;
+            color: #333;
+            -moz-appearance: textfield; /* Ocultar flechas en Firefox */
+        }
+
+        .number-grid-cell input::-webkit-outer-spin-button,
+        .number-grid-cell input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .number-grid-cell.prefilled {
+            background-color: #e0e0e0; /* Color para celdas pre-rellenadas */
+            font-weight: bold;
+            color: #1a1a1a;
+        }
+
+        /* Estilos específicos para la tabla pitagórica */
+        .pitagorica-grid-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0.6rem; /* Padding: 0.2rem * 3 */
+            border: 2px solid #666; /* Más fuerte */
+            border-radius: 0.75rem;
+            background-color: #fefefe;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            overflow-x: auto;
+        }
+
+        .pitagorica-header-row {
+            display: flex;
+            gap: 0.15rem; /* Espacio: 0.05rem * 3 */
+            margin-bottom: 0.15rem; /* Margen: 0.05rem * 3 */
+        }
+
+        .pitagorica-header-cell {
+            width: 5.1rem; /* Ancho: 1.7rem * 3 */
+            height: 5.1rem; /* Alto: 1.7rem * 3 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            background-color: #f0f0f0;
+            border: 2px solid #666; /* Más fuerte */
+            border-radius: 0.2rem; /* Borde más pequeño */
+            font-size: 1.8rem; /* Fuente: 0.6rem * 3 */
+            color: #555;
+            box-sizing: border-box;
+        }
+        .pitagorica-header-cell.empty-corner {
+            background-color: transparent;
+            border: none;
+            /* Estilos para la 'X' */
+            font-size: 2.5rem; /* Aumenta el tamaño de la X */
+            font-weight: 900; /* Más negrita */
+            color: #333; /* Color oscuro */
+        }
+
+        .pitagorica-main-content {
+            display: flex;
+        }
+
+        .pitagorica-side-header-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem; /* Espacio: 0.05rem * 3 */
+            margin-right: 0.15rem; /* Margen: 0.05rem * 3 */
+        }
+
+        .pitagorica-main-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 5.1rem); /* 10 columnas con ancho fijo: 1.7rem * 3 */
+            grid-template-rows: repeat(10, 5.1rem); /* 10 filas con alto fijo: 1.7rem * 3 */
+            gap: 0.15rem; /* Espacio: 0.05rem * 3 */
+        }
+        .pitagorica-main-grid .number-grid-cell {
+            border: 2px solid #666; /* Más fuerte */
+        }
+        .pitagorica-main-grid .number-grid-cell input {
+            font-size: 1.8rem; /* Ajuste para que quepa bien: 0.6rem * 3 */
+        }
+
+        /* Estilos específicos para Diana Multiplicaciones */
+        .diana-multiplicaciones-problem {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.539rem; /* 1.71rem * 0.9 */
+            border: 1.539px solid #ccc; /* 1.71px * 0.9 */
+            border-radius: 1.539rem; /* 1.71rem * 0.9 */
+            background-color: #fefefe;
+            box-shadow: 3.078px 3.078px 7.695px rgba(0,0,0,0.05); /* 3.42px 3.42px 8.55px * 0.9 */
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            position: relative; /* Para posicionar los aros */
+            width: 100%; /* Ocupa el ancho disponible en la celda del grid */
+            max-width: 432px; /* 480px * 0.9 */
+            margin: 0 auto; /* Centrar en su celda */
+            aspect-ratio: 1 / 1; /* Mantener proporción cuadrada */
+        }
+
+        .diana-center {
+            width: 92.7px; /* 103px * 0.9 */
+            height: 92.7px; /* 103px * 0.9 */
+            background-color: #ff6b6b; /* Rojo */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.79rem; /* 3.1rem * 0.9 */
+            font-weight: bold;
+            color: white;
+            border: 4.617px solid #c0392b; /* 5.13px * 0.9 */
+            z-index: 3;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .diana-ring {
+            position: absolute;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2;
+            box-sizing: border-box;
+        }
+
+        .diana-ring.inner {
+            width: 216px; /* 240px * 0.9 */
+            height: 216px; /* 240px * 0.9 */
+            border: 4.617px solid #55efc4; /* 5.13px * 0.9 */
+            background-color: rgba(85, 239, 196, 0.2);
+            font-size: 1.539rem; /* 1.71rem * 0.9 */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .diana-ring.outer {
+            width: 339.3px; /* 377px * 0.9 */
+            height: 339.3px; /* 377px * 0.9 */
+            border: 4.617px solid #a29bfe; /* 5.13px * 0.9 */
+            background-color: rgba(162, 155, 254, 0.2);
+            font-size: 1.539rem; /* 1.71rem * 0.9 */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+        }
+
+        /* General positioning for numbers in rings */
+        .diana-ring-item {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 45.9px; /* 51px * 0.9 */
+            height: 45.9px; /* 51px * 0.9 */
+            font-size: 1.386rem; /* 1.54rem * 0.9 */
+            font-weight: 500;
+            color: #333;
+        }
+
+        .diana-answer-box input {
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            border: 1.539px solid #999; /* 1.71px * 0.9 */
+            border-radius: 0.459rem; /* 0.51rem * 0.9 */
+            background-color: white;
+            font-size: 1.386rem; /* 1.54rem * 0.9 */
+            font-weight: bold;
+            color: #1a1a1a;
+            -moz-appearance: textfield;
+        }
+        .diana-answer-box input::-webkit-outer-spin-button,
+        .diana-answer-box input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .series-problem {
+                font-size: 1rem;
+            }
+            .series-number-box {
+                min-width: 2.5rem;
+                padding: 0.3rem 0.6rem;
+            }
+            .series-pattern-op {
+                font-size: 1rem;
+                min-width: 2rem;
+            }
+            .problem-math-wrapper {
+                font-size: 1.75rem; /* Ajuste de tamaño de fuente para móviles */
+            }
+
+            /* Responsive para pirámides */
+            #problems-container[style*="grid-template-columns: repeat(4"] {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            #problems-container[style*="grid-template-columns: repeat(3"] { /* For 4-2-1 base */
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            #problems-container[style*="grid-template-columns: repeat(2"] { /* For 8-4-2-1 base */
+                grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+            }
+
+            /* Responsive para tablas numéricas */
+            .number-grid-cell, .pitagorica-header-cell {
+                width: 4.8rem; /* Más pequeño para móviles: 1.6rem * 3 */
+                height: 4.8rem; /* Más pequeño para móviles: 1.6rem * 3 */
+                font-size: 1.8rem; /* Fuente más pequeña para móviles: 0.6rem * 3 */
+            }
+            .number-grid-cell input, .pitagorica-main-grid .number-grid-cell input {
+                font-size: 1.8rem; /* Fuente más pequeña para móviles: 0.6rem * 3 */
+            }
+            .pitagorica-main-grid {
+                grid-template-columns: repeat(10, 4.8rem);
+                grid-template-rows: repeat(10, 4.8rem);
+            }
+
+            /* Responsive para Diana Multiplicaciones */
+            .diana-multiplicaciones-problem {
+                max-width: 308.7px; /* 343px * 0.9 */
+            }
+            .diana-center {
+                width: 61.2px; /* 68px * 0.9 */
+                height: 61.2px; /* 68px * 0.9 */
+                font-size: 2.16rem; /* 2.4rem * 0.9 */
+            }
+            .diana-ring.inner {
+                width: 154.8px; /* 172px * 0.9 */
+                height: 154.8px; /* 172px * 0.9 */
+            }
+            .diana-ring.outer {
+                width: 247.5px; /* 275px * 0.9 */
+                height: 247.5px; /* 275px * 0.9 */
+            }
+            .diana-number, .diana-answer-box {
+                width: 38.7px; /* 43px * 0.9 */
+                height: 38.7px; /* 43px * 0.9 */
+                font-size: 1.233rem; /* 1.37rem * 0.9 */
+            }
+        }
+        @media (max-width: 500px) { /* Even smaller screens, specifically for 4-2-1 and 2-1 bases */
+             #problems-container[style*="grid-template-columns: repeat(2, minmax(0, 1fr))"] {
+                 grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+             }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="max-w-7xl mx-auto p-4 sm:p-8">
+        <header class="relative flex items-center justify-center mb-8">
+            <!-- Logo eliminado -->
+            <div class="text-center">
+                <h1 class="text-4xl md:text-5xl font-bold text-gray-800">Generador de Hojas de Matemáticas</h1>
+                <p class="text-lg text-gray-600 mt-2">Crea y descarga hojas de ejercicios personalizadas.</p>
+            </div>
+        </header>
+
+        <!-- Panel de Controles -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 p-6 bg-white rounded-2xl shadow-lg">
+            <!-- Columna 1: Tipo de Operación -->
+            <div class="lg:col-span-1">
+                <h3 class="font-bold text-lg mb-3 text-gray-700">1. Tipo de Operación</h3>
+                <div id="operation-buttons" class="space-y-2">
+                    <button data-value="suma-simple" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Suma Simple</button>
+                    <button data-value="suma-llevada" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-blue-600 text-white shadow-md">Suma con Llevada<span class="check-icon">&#10003;</span></button>
+                    <button data-value="resta-simple" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Resta Simple</button>
+                    <button data-value="resta-llevada" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Resta con Llevada</button>
+                    <button data-value="multiplicacion" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Multiplicación</button>
+                    <button data-value="series" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Series</button>
+                    <button data-value="pyramid" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Pirámides Matemáticas</button>
+                    <button data-value="tabla-numerica" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Tabla Numérica</button>
+                    <button data-value="diana-multiplicaciones" class="control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300">Diana Multiplicaciones</button>
+                </div>
+            </div>
+
+            <!-- Columna 2: Número de Dígitos y Cantidad de Problemas -->
+            <div class="lg:col-span-1">
+                <h3 class="font-bold text-lg mb-3 text-gray-700">2. Número de Dígitos</h3>
+                <div id="digit-buttons" class="flex space-x-2 mb-6">
+                   <button data-value="1" class="digit-button flex-1 p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300">1 dígito</button>
+                   <button data-value="2" class="digit-button flex-1 p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-blue-600 text-white shadow-md">2 dígitos</button>
+                   <button data-value="3" class="digit-button flex-1 p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300">3 dígitos</button>
+                </div>
+
+                <h3 class="font-bold text-lg mb-3 text-gray-700">3. Cantidad de Problemas</h3>
+                <div id="num-problems-buttons" class="grid grid-cols-2 gap-2">
+                    <button data-value="20" class="num-problems-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300">20 Problemas</button>
+                    <button data-value="30" class="num-problems-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-blue-600 text-white shadow-md">30 Problemas</button>
+                    <button data-value="40" class="num-problems-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300">40 Problemas</button>
+                    <!-- Eliminado el botón de 50 Problemas -->
+                </div>
+            </div>
+
+            <!-- Columna 3: Tablas de Multiplicar, Tipo y Patrón de Serie, Tamaño de Pirámide, Tabla Numérica -->
+            <div class="lg:col-span-1">
+                <h3 class="font-bold text-lg mb-3 text-gray-700">4. Tablas de Multiplicar</h3>
+                <div id="multiplication-tables" class="grid grid-cols-5 gap-2 transition-opacity duration-300 opacity-30 mb-6">
+                    <!-- Los botones de las tablas se generan con JS -->
+                </div>
+
+                <!-- Sección: Tipo y Patrón de la Serie -->
+                <h3 class="font-bold text-lg mb-3 text-gray-700">5. Tipo y patrón de la serie</h3>
+                <div id="series-controls-wrapper" class="transition-opacity duration-300 opacity-30">
+                    <!-- Checkbox para Patrón y Dirección Aleatorios -->
+                    <div class="mb-4 flex items-center">
+                        <input type="checkbox" id="random-series-checkbox" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2">
+                        <label for="random-series-checkbox" class="text-gray-700 text-sm font-medium">Patrón y Dirección Aleatorios</label>
+                    </div>
+
+                    <!-- Slider para Rango de Inicio para Series -->
+                    <div id="series-start-range-slider-container" class="transition-opacity duration-300 opacity-30 mb-6">
+                        <label for="series-start-range-slider" class="block text-sm font-medium text-gray-700 mb-2">Valores de inicio hasta: <span id="series-start-range-label" class="font-bold text-blue-600">99</span></label>
+                        <input type="range" id="series-start-range-slider" min="0" max="9" step="1" value="9" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer range-lg">
+                    </div>
+
+                    <!-- Botones de dirección de series -->
+                    <div id="series-direction-buttons" class="grid grid-cols-2 gap-2 mb-6">
+                        <!-- Los botones de dirección de series se generan con JS -->
+                    </div>
+                    <!-- Botones del patrón numérico -->
+                    <div id="series-pattern-buttons" class="grid grid-cols-5 gap-2">
+                        <!-- Los botones del patrón de series se generan con JS -->
+                    </div>
+                </div>
+
+                <!-- Nueva Sección: Tamaño de la Pirámide -->
+                <h3 class="font-bold text-lg mb-3 text-gray-700">6. Tamaño de la Pirámide</h3>
+                <div id="pyramid-size-buttons" class="grid grid-cols-3 gap-2 transition-opacity duration-300 opacity-30">
+                    <button data-value="2-1" class="pyramid-size-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-blue-600 text-white shadow-md">2-1</button>
+                    <button data-value="4-2-1" class="pyramid-size-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300">4-2-1</button>
+                    <!-- Eliminado el botón 8-4-2-1 -->
+                </div>
+
+                <!-- Nueva Sección: Opciones de Tabla Numérica -->
+                <h3 class="font-bold text-lg mb-3 text-gray-700">7. Opciones de Tabla Numérica</h3>
+                <div id="tabla-numerica-controls" class="grid grid-cols-1 gap-2 transition-opacity duration-300 opacity-30">
+                    <button data-value="1-100" class="tabla-numerica-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-blue-600 text-white shadow-md">Números 1-100</button>
+                    <button data-value="pitagorica" class="tabla-numerica-button p-3 rounded-lg transition-all duration-200 text-sm font-medium bg-gray-200 text-gray-800 hover:bg-gray-300">Tabla Pitagórica</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+            <button id="generate-btn" class="w-full sm:w-auto px-8 py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transform hover:scale-105 transition-all duration-300 ease-in-out text-lg">Generar Nueva Hoja</button>
+            <button id="download-btn" class="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:bg-red-700 transform hover:scale-105 transition-all duration-300 ease-in-out text-lg">Descargar PDF</button>
+            <button id="download-answers-btn" class="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transform hover:scale-105 transition-all duration-300 ease-in-out text-lg">Descargar Respuestas</button>
+        </div>
+
+        <!-- Hoja de Trabajo -->
+        <div id="worksheet" class="p-4 bg-white border-2 border-white rounded-lg shadow-inner">
+            <h2 id="worksheet-title" style="visibility: hidden; position: absolute;" class="text-2xl font-bold text-center mb-8 text-gray-800">Hoja de Ejercicios de Matemáticas</h2>
+            <div id="problems-container" class="grid grid-cols-5 gap-x-8 gap-y-12">
+                <!-- Los problemas se generan aquí -->
+            </div>
+        </div>
+        <footer class="text-center mt-8 text-gray-500 text-sm">
+            <p>Diseñado por AFB para ayudar en el aprendizaje de las matemáticas.</p>
+        </footer>
+    </div>
+
+    <!-- Modal para alertas -->
+    <div id="alert-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <p id="alert-message" class="mb-4 text-lg"></p>
+            <button id="alert-close-btn" class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- Overlay de carga (reloj en movimiento) -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-content">
+            <span class="loading-icon">🕒</span> <!-- Icono de reloj -->
+            <p class="text-xl font-semibold text-gray-700">Generando PDF...</p>
+            <p class="text-sm text-gray-500">Esto puede tardar unos segundos.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Estado de la aplicación
+            let state = {
+                operation: 'suma-llevada', // Operación predeterminada al cargar
+                digits: '2', // Dígitos predeterminados
+                numProblems: 30, // Cantidad de problemas predeterminada (cambiado de 50 a 30)
+                tables: new Array(10).fill(true), // Tablas de multiplicar seleccionadas (1-10)
+                seriesPatterns: new Array(10).fill(false), // Patrones de series (1-10), se pueden seleccionar varios
+                seriesDirections: ['progresiva'], // Dirección de series ('progresiva', 'regresiva'), se pueden seleccionar ambas
+                randomSeriesMode: false, // Modo aleatorio para series (patrón y dirección por paso)
+                seriesStartMaxDecade: 9, // Máxima década para el número de inicio de series (0-9, representando 0s-90s)
+                pyramidSize: '2-1', // Nuevo: Tamaño de la pirámide
+                tablaNumericaType: '1-100', // Nuevo: Tipo de tabla numérica ('1-100', 'pitagorica')
+                problems: [] // Almacena los problemas generados, incluyendo sus respuestas
+            };
+
+            // Por defecto, selecciona el patrón 2 para series
+            state.seriesPatterns[1] = true; // Selecciona el '2' por defecto (índice 1 para valor 2)
+
+
+            // Elementos del DOM
+            const operationButtonsContainer = document.getElementById('operation-buttons');
+            const digitButtonsContainer = document.getElementById('digit-buttons');
+            const numProblemsButtonsContainer = document.getElementById('num-problems-buttons');
+            const multiplicationTablesContainer = document.getElementById('multiplication-tables');
+            const seriesControlsWrapper = document.getElementById('series-controls-wrapper');
+            const randomSeriesCheckbox = document.getElementById('random-series-checkbox');
+            const seriesPatternButtonsContainer = document.getElementById('series-pattern-buttons');
+            const seriesDirectionButtonsContainer = document.getElementById('series-direction-buttons');
+            const seriesStartRangeSliderContainer = document.getElementById('series-start-range-slider-container'); // Contenedor del slider
+            const seriesStartRangeSlider = document.getElementById('series-start-range-slider'); // El slider en sí
+            const seriesStartRangeLabel = document.getElementById('series-start-range-label'); // Etiqueta del slider
+            const pyramidSizeButtonsContainer = document.getElementById('pyramid-size-buttons'); // Nuevo
+            const tablaNumericaControls = document.getElementById('tabla-numerica-controls'); // Nuevo
+            const generateBtn = document.getElementById('generate-btn');
+            const downloadBtn = document.getElementById('download-btn');
+            const downloadAnswersBtn = document.getElementById('download-answers-btn');
+            const problemsContainer = document.getElementById('problems-container');
+            const worksheet = document.getElementById('worksheet');
+            const worksheetTitle = document.getElementById('worksheet-title');
+            // const headerLogo = document.getElementById('header-logo'); // Logo eliminado
+
+            // Elementos del Modal
+            const alertModal = document.getElementById('alert-modal');
+            const alertMessage = document.getElementById('alert-message');
+            const alertCloseBtn = document.getElementById('alert-close-btn');
+
+            // Elementos del Overlay de carga
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            const checkIconSvg = `<span class="check-icon">&#10003;</span>`;
+
+            // Habilitar los botones de descarga por defecto ya que no hay logo que cargar
+            downloadBtn.disabled = false;
+            downloadAnswersBtn.disabled = false;
+
+            // Se elimina la lógica de carga y error del logo
+            // headerLogo.src = logoSrc;
+            // headerLogo.onload = () => {
+            //     downloadBtn.disabled = false;
+            //     downloadAnswersBtn.disabled = false;
+            // };
+            // headerLogo.onerror = () => {
+            //     console.error("Error loading header logo image. The PDF might not include the logo.");
+            //     showAlert("No se pudo cargar el logo. La hoja se generará sin él.");
+            //     downloadBtn.disabled = false; // Still allow functionality without the logo
+            //     downloadAnswersBtn.disabled = false;
+            // };
+
+            // --- Funciones de Lógica ---
+            const getRandomNumberByDigits = (numDigits) => {
+                if (numDigits === 1) return Math.floor(Math.random() * 9) + 1; // 1-9 for regular ops
+                const min = Math.pow(10, numDigits - 1);
+                const max = Math.pow(10, numDigits) - 1;
+                return Math.floor(Math.random() * (max - min + 1)) + min;
+            };
+
+            const getDigitsArray = (num) => String(num).split('').map(Number);
+            
+            const isSimpleSum = (n1, n2) => {
+                const d1 = getDigitsArray(n1).reverse();
+                const d2 = getDigitsArray(n2).reverse();
+                const len = Math.max(d1.length, d2.length);
+                for (let i = 0; i < len; i++) {
+                    if (((d1[i] || 0) + (d2[i] || 0)) >= 10) return false;
+                }
+                return true;
+            };
+
+            const isCarrySum = (n1, n2) => !isSimpleSum(n1, n2);
+            
+            const isSimpleSub = (n1, n2) => {
+                const d1 = getDigitsArray(n1).reverse();
+                const d2 = getDigitsArray(n2).reverse();
+                if (n1 < n2) return false;
+
+                for (let i = 0; i < d2.length; i++) {
+                    if (d1[i] < d2[i]) return false;
+                }
+                return true;
+            };
+
+            const isCarrySub = (n1, n2) => (n1 >= n2) && !isSimpleSub(n1, n2);
+
+            // Helper para generar números para pirámides, respetando un valor máximo para la base
+            // maxBaseValueOverride permite especificar un límite diferente para los números base si es necesario
+            const generatePyramidNumbers = (baseCount, maxOverallPyramidValue, maxBaseNumberValue = null) => {
+                let pyramid = [];
+                let baseNumbers = [];
+                let valid = false; // Se inicializa a false, se convierte en true si se genera una pirámide válida
+                let attemptsToFindValidPyramid = 0;
+                const maxAttemptsToFindValidPyramid = 500; // Limitar intentos generales para encontrar una pirámide válida
+
+                while (!valid && attemptsToFindValidPyramid < maxAttemptsToFindValidPyramid) {
+                    baseNumbers = []; // Reiniciar números base para cada intento de pirámide
+                    let zeroCount = 0; // Contador de ceros en la base de la pirámide
+                    let currentPyramidBaseIsValid = true; // Validez de la base actual para el conteo de ceros
+
+                    let attemptsPerBase = 0;
+                    const maxAttemptsPerBase = 100;
+
+                    for (let i = 0; i < baseCount; i++) {
+                        let num;
+                        let innerNumAttempts = 0;
+                        const maxInnerNumAttempts = 50; // Intentos para un solo número base
+
+                        // Usar maxBaseNumberValue para la generación de la base, de lo contrario maxOverallPyramidValue
+                        const currentMaxValForGeneration = maxBaseNumberValue !== null ? maxBaseNumberValue : maxOverallPyramidValue;
+
+                        do {
+                            num = Math.floor(Math.random() * (currentMaxValForGeneration + 1));
+
+                            const minValForDigits = (parseInt(state.digits) === 1) ? 0 : Math.pow(10, parseInt(state.digits) - 1);
+                            
+                            // Condición para número inválido:
+                            // 1. Más de un cero en la base
+                            // 2. El número es menor que el mínimo permitido para su recuento de dígitos (ej. 0 para 2-dígitos a menos que se permita explícitamente)
+                            // 3. El número excede el máximo especificado para la generación de la base (currentMaxValForGeneration)
+                            if ( (num === 0 && zeroCount >= 1) || 
+                                 (num < minValForDigits && num !== 0 && parseInt(state.digits) !== 1) ||
+                                 (num > currentMaxValForGeneration) )
+                            {
+                                innerNumAttempts++;
+                                continue;
+                            }
+                            
+                            if (num === 0) {
+                                zeroCount++;
+                            }
+                            break; // El número es válido, salir del bucle do-while
+                        } while (innerNumAttempts < maxInnerNumAttempts);
+
+                        if (innerNumAttempts >= maxInnerNumAttempts) {
+                            currentPyramidBaseIsValid = false; // No se pudo encontrar un número válido para esta posición
+                            break;
+                        }
+                        baseNumbers.push(num);
+                    }
+
+                    if (!currentPyramidBaseIsValid || zeroCount > 1) { // Si la base no es válida o tiene demasiados ceros
+                        attemptsToFindValidPyramid++;
+                        continue; // Reintentar con una nueva base
+                    }
+
+                    // Ahora, construir la pirámide a partir de esta base validada
+                    pyramid = [baseNumbers];
+                    let currentLayer = baseNumbers;
+                    let allLayersValid = true;
+
+                    while (currentLayer.length > 1) {
+                        let nextLayer = [];
+                        for (let i = 0; i < currentLayer.length - 1; i++) {
+                            let sum = currentLayer[i] + currentLayer[i+1];
+                            if (sum > maxOverallPyramidValue || sum < 0) { // La suma no debe exceder maxOverallPyramidValue ni ser negativa
+                                allLayersValid = false;
+                                break;
+                            }
+                            nextLayer.push(sum);
+                        }
+                        if (!allLayersValid) break;
+                        pyramid.push(nextLayer);
+                        currentLayer = nextLayer;
+                    }
+
+                    if (allLayersValid) {
+                        valid = true; // Se encontró una pirámide válida completa
+                    } else {
+                        attemptsToFindValidPyramid++; // Pirámide inválida, reintentar
+                    }
+                }
+                
+                return valid ? pyramid : null; // Devuelve la pirámide si es válida, de lo contrario null
+            };
+
+
+            // --- Función para mostrar alertas personalizadas ---
+            const showAlert = (message) => {
+                alertMessage.textContent = message;
+                alertModal.classList.add('visible');
+            };
+
+            // --- Funciones para mostrar/ocultar el overlay de carga ---
+            const showLoading = (message = "Generando PDF...", subMessage = "Esto puede tardar unos segundos.") => {
+                loadingOverlay.querySelector('p:first-of-type').textContent = message;
+                loadingOverlay.querySelector('p:last-of-type').textContent = subMessage;
+                loadingOverlay.classList.add('visible');
+            };
+
+            const hideLoading = () => {
+                alertModal.classList.remove('visible'); // Ensure alert modal is hidden
+                loadingOverlay.classList.remove('visible');
+            };
+
+
+            // --- Generación de Problemas ---
+            const generateProblems = () => {
+                const newProblems = [];
+                let attempts = 0;
+                const maxAttempts = 5000;
+                
+                let totalProblemsToGenerate;
+                if (state.operation === 'series' || state.operation === 'tabla-numerica') { // Tabla numérica siempre es 1 problema
+                    totalProblemsToGenerate = 1; 
+                } else if (state.operation === 'pyramid') {
+                    if (state.pyramidSize === '2-1') {
+                        totalProblemsToGenerate = 24; // 24 problemas para pirámides 2-1 (6 filas x 4 columnas)
+                    } else if (state.pyramidSize === '4-2-1') {
+                        totalProblemsToGenerate = 12; // 12 problemas para pirámides 4-2-1
+                    }
+                } else if (state.operation === 'diana-multiplicaciones') { // Diana Multiplicaciones siempre es 6 problemas
+                    totalProblemsToGenerate = 6;
+                }
+                else {
+                    totalProblemsToGenerate = state.numProblems;
+                }
+
+                // Declarar pyramidStructure aquí en el ámbito más amplio de generateProblems
+                let pyramidStructure = null; // Inicializar a null para evitar ReferenceError
+
+                while (newProblems.length < totalProblemsToGenerate && attempts < maxAttempts) { 
+                    let problem = null;
+
+                    switch (state.operation) {
+                        case 'suma-simple':
+                        case 'suma-llevada':
+                        case 'resta-simple':
+                        case 'resta-llevada':
+                        case 'multiplicacion':
+                            const num1 = getRandomNumberByDigits(parseInt(state.digits));
+                            let num2 = getRandomNumberByDigits(parseInt(state.digits));
+                            
+                            if (state.operation === 'multiplicacion') {
+                                const selectedTables = state.tables.map((t, i) => t ? i + 1 : null).filter(Boolean);
+                                if (selectedTables.length === 0) {
+                                    attempts++;
+                                    continue;
+                                }
+                                num2 = selectedTables[Math.floor(Math.random() * selectedTables.length)];
+                                problem = { num1, num2, operator: '×', answer: num1 * num2 };
+                            } else {
+                                let currentNum1, currentNum2;
+                                let conditionMet = false;
+                                let innerAttempts = 0;
+                                const maxInnerAttempts = 100;
+
+                                do {
+                                    currentNum1 = getRandomNumberByDigits(parseInt(state.digits));
+                                    currentNum2 = getRandomNumberByDigits(parseInt(state.digits));
+                                    
+                                    if (state.operation === 'suma-simple') conditionMet = isSimpleSum(currentNum1, currentNum2);
+                                    else if (state.operation === 'suma-llevada') conditionMet = isCarrySum(currentNum1, currentNum2);
+                                    else if (state.operation === 'resta-simple') conditionMet = isSimpleSub(currentNum1, currentNum2);
+                                    else if (state.operation === 'resta-llevada') conditionMet = isCarrySub(currentNum1, currentNum2);
+                                    innerAttempts++;
+                                } while (!conditionMet && innerAttempts < maxInnerAttempts);
+
+                                if (conditionMet) {
+                                    if (state.operation.startsWith('resta')) {
+                                        problem = { num1: Math.max(currentNum1, currentNum2), num2: Math.min(currentNum1, currentNum2), operator: '−', answer: Math.max(currentNum1, currentNum2) - Math.min(currentNum1, currentNum2) };
+                                    } else {
+                                        problem = { num1: currentNum1, num2: currentNum2, operator: '+', answer: currentNum1 + currentNum2 };
+                                    }
+                                }
+                            }
+                            break;
+
+                        case 'series':
+                            let seriesNumbers = [];
+                            let stepOperations = []; // Para almacenar {operador, valor} para cada paso
+                            let validSeries = true;
+                            const numSquares = 6; 
+
+                            // Determinar valor min/max basado en dígitos
+                            const minValForDigits = (parseInt(state.digits) === 1) ? 0 : Math.pow(10, parseInt(state.digits) - 1);
+                            const maxValForDigits = Math.pow(10, parseInt(state.digits)) - 1;
+
+                            // Determinar rango de inicio basado en el slider (ej. 0 para 0-9, 1 para 10-19, ..., 9 para 90-99)
+                            const selectedDecadeMin = state.seriesStartMaxDecade * 10;
+                            const selectedDecadeMax = (state.seriesStartMaxDecade * 10) + 9;
+
+                            // Calcular la intersección del rango de dígitos y el rango de década seleccionado para el número DE INICIO
+                            const effectiveMinStartNum = Math.max(minValForDigits, selectedDecadeMin);
+                            const effectiveMaxStartNum = Math.min(maxValForDigits, selectedDecadeMax);
+
+                            if (effectiveMaxStartNum < effectiveMinStartNum) {
+                                attempts++;
+                                continue;
+                            }
+
+                            let currentNum = Math.floor(Math.random() * (effectiveMaxStartNum - effectiveMinStartNum + 1)) + effectiveMinStartNum;
+                            seriesNumbers.push(currentNum);
+
+                            for (let i = 0; i < numSquares - 1; i++) { // Hay numSquares - 1 pasos
+                                let stepPattern;
+                                let stepDirection;
+
+                                if (state.randomSeriesMode) {
+                                    stepPattern = Math.floor(Math.random() * 10) + 1; // Patrón aleatorio para este paso (1 a 10)
+                                    stepDirection = Math.random() < 0.5 ? 'progresiva' : 'regresiva'; // Dirección aleatoria para este paso
+                                } else {
+                                    const activeSeriesPatterns = state.seriesPatterns.map((p, idx) => p ? idx + 1 : null).filter(Boolean);
+                                    const activeSeriesDirections = state.seriesDirections.filter(Boolean);
+
+                                    if (activeSeriesPatterns.length === 0 || activeSeriesDirections.length === 0) {
+                                        validSeries = false; // No se puede generar si no se seleccionan patrones o direcciones
+                                        break;
+                                    }
+                                    stepPattern = activeSeriesPatterns[Math.floor(Math.random() * activeSeriesPatterns.length)];
+                                    stepDirection = activeSeriesDirections[Math.floor(Math.random() * activeSeriesDirections.length)];
+                                }
+
+                                let nextNum;
+                                if (stepDirection === 'progresiva') {
+                                    nextNum = currentNum + stepPattern;
+                                } else { // regresiva
+                                    nextNum = currentNum - stepPattern;
+                                }
+
+                                // Comprobar si nextNum está dentro del *rango general de dígitos* permitido (no el rango de década inicial)
+                                if (nextNum < minValForDigits || nextNum > maxValForDigits) {
+                                    validSeries = false;
+                                    break;
+                                }
+
+                                seriesNumbers.push(nextNum);
+                                stepOperations.push({ operator: stepDirection === 'progresiva' ? '+' : '−', value: stepPattern });
+                                currentNum = nextNum;
+                            }
+
+                            if (validSeries && seriesNumbers.length === numSquares) {
+                                problem = {
+                                    type: 'series',
+                                    series: seriesNumbers,
+                                    stepOperations: stepOperations, // Almacena las operaciones por paso
+                                    answer: seriesNumbers
+                                };
+                            }
+                            break;
+                        
+                        case 'pyramid':
+                            let maxOverallPyramidValue;
+                            let maxBaseNumberValue = null; // Por defecto, no hay límite específico en la base
+
+                            if (parseInt(state.digits) === 1) {
+                                maxOverallPyramidValue = 72; // Permitir sumas hasta 72
+                                maxBaseNumberValue = 9; // Números base estrictamente de 1 dígito (0-9)
+                            } else if (parseInt(state.digits) === 2) {
+                                // Esta rama ya no debería alcanzarse para pirámides con 2 dígitos,
+                                // ya que el botón de 2 dígitos estará deshabilitado.
+                                maxOverallPyramidValue = 99; 
+                                maxBaseNumberValue = 5; 
+                            }
+                            // 3-digit está deshabilitado por updateDigitControls
+
+                            let baseCountPyramid;
+                            if (state.pyramidSize === '2-1') baseCountPyramid = 2;
+                            else if (state.pyramidSize === '4-2-1') baseCountPyramid = 4;
+
+                            // Intentar generar números de pirámide, pasando maxBaseNumberValue si se ha especificado un límite
+                            pyramidStructure = generatePyramidNumbers(baseCountPyramid, maxOverallPyramidValue, maxBaseNumberValue);
+
+                            if (pyramidStructure) {
+                                problem = {
+                                    type: 'pyramid',
+                                    pyramid: pyramidStructure, // Todas las capas
+                                    answer: pyramidStructure[pyramidStructure.length - 1][0] // Número superior
+                                };
+                            }
+                            break;
+
+                        case 'tabla-numerica':
+                            if (state.tablaNumericaType === '1-100') {
+                                const grid100 = Array.from({ length: 10 }, (_, r) => 
+                                    Array.from({ length: 10 }, (_, c) => (r * 10) + c + 1)
+                                );
+                                const prefilledCells = [];
+                                const usedRows = new Set(); // Usar un Set para controlar las filas ya usadas
+                                const numPrefilled = 10; // Queremos 10 números pre-rellenados (uno por fila)
+
+                                let attemptsToFill = 0;
+                                const maxAttemptsToFill = 100; // Límite de seguridad para evitar bucles infinitos
+
+                                while (prefilledCells.length < numPrefilled && attemptsToFill < maxAttemptsToFill) {
+                                    let randomRow;
+                                    let rowFound = false;
+                                    let rowAttempt = 0;
+                                    const maxRowAttempts = 20; // Intentos para encontrar una fila no usada
+
+                                    do {
+                                        randomRow = Math.floor(Math.random() * 10); // Filas de 0 a 9
+                                        if (!usedRows.has(randomRow)) {
+                                            rowFound = true;
+                                            usedRows.add(randomRow);
+                                        }
+                                        rowAttempt++;
+                                    } while (!rowFound && rowAttempt < maxRowAttempts);
+
+                                    if (!rowFound) {
+                                        console.warn("No se pudo encontrar una fila única para las celdas pre-rellenadas. Deteniendo la generación de pre-rellenos.");
+                                        break; // Salir si no se puede encontrar una fila única
+                                    }
+
+                                    const randomCol = Math.floor(Math.random() * 10); // Columnas de 0 a 9
+                                    const value = grid100[randomRow][randomCol]; // Obtener el valor de la celda
+
+                                    prefilledCells.push({ row: randomRow, col: randomCol, value: value });
+                                    attemptsToFill++;
+                                }
+                                problem = {
+                                    type: 'tabla-numerica',
+                                    subType: '1-100',
+                                    grid: grid100,
+                                    prefilledCells: prefilledCells, // Usar el nuevo array
+                                    answer: grid100
+                                };
+                            } else if (state.tablaNumericaType === 'pitagorica') {
+                                const gridPitagorica = Array.from({ length: 10 }, (_, r) => 
+                                    Array.from({ length: 10 }, (_, c) => (r + 1) * (c + 1))
+                                );
+                                problem = {
+                                    type: 'tabla-numerica',
+                                    subType: 'pitagorica',
+                                    grid: gridPitagorica,
+                                    answer: gridPitagorica
+                                };
+                            }
+                            break;
+                        
+                        case 'diana-multiplicaciones':
+                            const selectedTables = state.tables.map((t, i) => t ? i + 1 : null).filter(Boolean);
+                            if (selectedTables.length === 0) {
+                                showAlert("Por favor, selecciona al menos una tabla de multiplicar para las Dianas.");
+                                return; // Salir de la función si no hay tablas seleccionadas
+                            }
+                            const tableNumber = selectedTables[Math.floor(Math.random() * selectedTables.length)];
+                            problem = { type: 'diana-multiplicaciones', tableNumber: tableNumber };
+                            break;
+                    }
+                    
+                    if (problem) {
+                        newProblems.push(problem);
+                    }
+                    attempts++;
+                }
+
+                // Error genérico si no se generaron problemas después de muchos intentos
+                if (newProblems.length === 0 && attempts >= maxAttempts) {
+                    let errorMessage = "No se pudieron generar problemas con los criterios seleccionados después de varios intentos. Intenta con otros ajustes.";
+                    if (state.operation === 'multiplicacion' && state.tables.filter(Boolean).length === 0) {
+                        errorMessage = "Por favor, selecciona al menos una tabla de multiplicar.";
+                    } else if (state.operation === 'series' && state.seriesPatterns.filter(Boolean).length === 0 && !state.randomSeriesMode) {
+                        errorMessage = "Por favor, selecciona al menos un patrón de serie o activa el modo aleatorio.";
+                    } else if (state.operation === 'series' && state.seriesDirections.filter(Boolean).length === 0 && !state.randomSeriesMode) {
+                        errorMessage = "Por favor, selecciona al menos una dirección para las series (Progresiva o Regresiva) o activa el modo aleatorio.";
+                    } else if (state.operation === 'pyramid') {
+                        // Comprueba si pyramidStructure es nulo después de los intentos
+                        if (!pyramidStructure) { 
+                             errorMessage = `No se pudieron generar pirámides del tamaño ${state.pyramidSize} con números de ${state.digits} dígitos. Posiblemente los números de la base son demasiado grandes o el rango de dígitos es demasiado pequeño para que las sumas encajen. Intenta aumentar el número de dígitos o ajustar el tamaño de la pirámide.`;
+                        }
+                    }
+                    showAlert(errorMessage);
+                }
+                state.problems = newProblems; 
+                renderProblems(newProblems);
+            };
+            
+            // --- Renderizado ---
+            const renderProblems = (problems, showAnswers = false) => {
+                problemsContainer.innerHTML = '';
+                
+                // Reiniciar estilos de grid
+                problemsContainer.style.display = '';
+                problemsContainer.style.flexDirection = '';
+                problemsContainer.style.gap = '';
+                problemsContainer.style.gridTemplateColumns = '';
+
+                problemsContainer.classList.remove('problems-container-normal', 'problems-container-series'); // Eliminar clases antiguas
+
+                if (state.operation === 'series') {
+                    problemsContainer.classList.add('problems-container-series'); 
+                } else if (state.operation === 'pyramid') {
+                    // Grid personalizado para pirámides basado en el tamaño
+                    problemsContainer.style.display = 'grid';
+                    problemsContainer.style.gap = '2.5rem'; // Espacio estándar para pirámides
+                    if (state.pyramidSize === '4-2-1') { // Pirámides de base 4: 3 columnas
+                        problemsContainer.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+                    } else if (state.pyramidSize === '2-1') { // Pirámides de base 2: 4 columnas
+                        problemsContainer.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+                    }
+                } else if (state.operation === 'tabla-numerica') {
+                    // Para tabla-numerica, queremos un diseño de una sola columna para el contenedor de problemas
+                    problemsContainer.style.display = 'flex';
+                    problemsContainer.style.flexDirection = 'column';
+                    problemsContainer.style.gap = '1rem'; // Pequeño espacio entre problemas (aunque actualmente solo hay 1)
+                } else if (state.operation === 'diana-multiplicaciones') {
+                    problemsContainer.style.display = 'grid';
+                    problemsContainer.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))'; // 2 columnas para las dianas
+                    problemsContainer.style.gap = '1rem'; // Espacio entre dianas (ajustado para que quepan)
+                }
+                else {
+                    problemsContainer.classList.add('problems-container-normal'); 
+                }
+
+                if (problems.length === 0) {
+                    problemsContainer.innerHTML = `<div class="col-span-full text-center py-16 text-gray-500">
+                        <p>¡Genera una hoja de trabajo para empezar!</p>
+                        <p class="text-sm mt-2">Usa los controles de arriba y haz clic en "Generar Nueva Hoja".</p>
+                    </div>`;
+                    return;
+                }
+
+                problems.forEach((p, index) => {
+                    const problemEl = document.createElement('div');
+                    if (p.type === 'series') { // Comprobar el tipo de problema para renderizar series
+                        problemEl.className = 'series-problem w-full'; 
+
+                        // Primer número (siempre visible)
+                        const firstNumSpan = document.createElement('span');
+                        firstNumSpan.className = 'series-number-box';
+                        firstNumSpan.textContent = p.series[0];
+                        problemEl.appendChild(firstNumSpan);
+
+                        p.stepOperations.forEach((stepOp, i) => {
+                            const arrowSpan1 = document.createElement('span');
+                            arrowSpan1.className = 'series-arrow';
+                            arrowSpan1.textContent = ' → '; 
+                            problemEl.appendChild(arrowSpan1);
+
+                            const patternOpSpan = document.createElement('span');
+                            patternOpSpan.className = 'series-pattern-op';
+                            patternOpSpan.textContent = `${stepOp.operator}${stepOp.value}`; // Usar la operación y valor del paso
+                            problemEl.appendChild(patternOpSpan);
+                            
+                            const arrowSpan2 = document.createElement('span');
+                            arrowSpan2.className = 'series-arrow';
+                            arrowSpan2.textContent = ' → '; 
+                            problemEl.appendChild(arrowSpan2);
+
+                            const nextNumSpan = document.createElement('span');
+                            nextNumSpan.className = 'series-number-box';
+                            if (showAnswers) {
+                                nextNumSpan.textContent = p.series[i + 1];
+                            } else {
+                                nextNumSpan.textContent = ''; 
+                            }
+                            problemEl.appendChild(nextNumSpan);
+                        });
+
+                    } else if (p.type === 'pyramid') { // Nuevo renderizado para pirámides
+                        problemEl.className = 'pyramid-problem w-full';
+                        // Renderizar las capas de la pirámide de arriba a abajo
+                        // La pirámide se guarda como [[base], [layer2], ..., [top]]
+                        // Para renderizar de arriba a abajo visualmente, iteramos en orden inverso
+                        const reversedPyramid = [...p.pyramid].reverse();
+
+                        reversedPyramid.forEach((layer, layerIndex) => {
+                            const layerDiv = document.createElement('div');
+                            layerDiv.className = 'pyramid-layer';
+                            
+                            layer.forEach((num, numIndex) => {
+                                const numSpan = document.createElement('span');
+                                numSpan.className = 'pyramid-number-box';
+                                
+                                // Si es la capa base (última en reversedPyramid, por lo tanto layerIndex más alto)
+                                // o si estamos mostrando las respuestas, mostramos el número.
+                                // De lo contrario, la casilla está vacía.
+                                if (showAnswers || layerIndex === reversedPyramid.length - 1) {
+                                    numSpan.textContent = num;
+                                } else {
+                                    numSpan.textContent = '';
+                                    numSpan.classList.add('empty'); // Añadir clase para estilo de casilla vacía
+                                }
+                                layerDiv.appendChild(numSpan);
+                            });
+                            problemEl.appendChild(layerDiv);
+                        });
+
+                    } else if (p.type === 'tabla-numerica') { // Nuevo renderizado para tabla numérica
+                        problemEl.className = 'w-full flex justify-center'; // Centrar la tabla en el contenedor
+
+                        if (p.subType === '1-100') {
+                            const gridContainer = document.createElement('div');
+                            gridContainer.className = 'number-grid-container';
+                            
+                            p.grid.forEach((row, rowIndex) => {
+                                const rowDiv = document.createElement('div');
+                                rowDiv.className = 'number-grid-row';
+                                row.forEach((cellValue, colIndex) => {
+                                    const cellDiv = document.createElement('div');
+                                    cellDiv.className = 'number-grid-cell';
+                                    
+                                    const prefilled = p.prefilledCells.some(c => c.row === rowIndex && c.col === colIndex);
+                                    if (prefilled) {
+                                        cellDiv.textContent = cellValue;
+                                        cellDiv.classList.add('prefilled');
+                                    } else {
+                                        const input = document.createElement('input');
+                                        input.type = 'number';
+                                        input.min = '1';
+                                        input.max = '100';
+                                        input.readOnly = showAnswers; // Solo lectura si se muestran respuestas
+                                        if (showAnswers) {
+                                            input.value = cellValue;
+                                        }
+                                        cellDiv.appendChild(input);
+                                    }
+                                    rowDiv.appendChild(cellDiv);
+                                });
+                                gridContainer.appendChild(rowDiv);
+                            });
+                            problemEl.appendChild(gridContainer);
+
+                        } else if (p.subType === 'pitagorica') {
+                            const pitagoricaWrapper = document.createElement('div');
+                            pitagoricaWrapper.className = 'pitagorica-grid-wrapper';
+
+                            // Header row (1-10)
+                            const headerRowDiv = document.createElement('div');
+                            headerRowDiv.className = 'pitagorica-header-row';
+                            
+                            const emptyCorner = document.createElement('div');
+                            emptyCorner.className = 'pitagorica-header-cell empty-corner';
+                            emptyCorner.textContent = 'X'; // Añadir la 'X' aquí
+                            headerRowDiv.appendChild(emptyCorner); // Esquina vacía
+
+                            for (let i = 1; i <= 10; i++) {
+                                const headerCell = document.createElement('div');
+                                headerCell.className = 'pitagorica-header-cell';
+                                headerCell.textContent = i;
+                                headerRowDiv.appendChild(headerCell);
+                            }
+                            pitagoricaWrapper.appendChild(headerRowDiv);
+
+                            // Main content (side header + main grid)
+                            const mainContentDiv = document.createElement('div');
+                            mainContentDiv.className = 'pitagorica-main-content';
+
+                            // Side header column (1-10)
+                            const sideHeaderColDiv = document.createElement('div');
+                            sideHeaderColDiv.className = 'pitagorica-side-header-col';
+                            for (let i = 1; i <= 10; i++) {
+                                const headerCell = document.createElement('div');
+                                headerCell.className = 'pitagorica-header-cell';
+                                headerCell.textContent = i;
+                                sideHeaderColDiv.appendChild(headerCell);
+                            }
+                            mainContentDiv.appendChild(sideHeaderColDiv);
+
+                            // Main multiplication grid
+                            const mainGridDiv = document.createElement('div');
+                            mainGridDiv.className = 'pitagorica-main-grid';
+                            p.grid.forEach((row, rowIndex) => {
+                                row.forEach((cellValue, colIndex) => {
+                                    const cellDiv = document.createElement('div');
+                                    cellDiv.className = 'number-grid-cell';
+                                    const input = document.createElement('input');
+                                    input.type = 'number';
+                                    input.readOnly = showAnswers; // Solo lectura si se muestran respuestas
+                                    if (showAnswers) {
+                                        input.value = cellValue;
+                                    }
+                                    cellDiv.appendChild(input);
+                                    mainGridDiv.appendChild(cellDiv);
+                                });
+                            });
+                            mainContentDiv.appendChild(mainGridDiv);
+                            pitagoricaWrapper.appendChild(mainContentDiv);
+                            problemEl.appendChild(pitagoricaWrapper);
+                        }
+
+                    } else if (p.type === 'diana-multiplicaciones') {
+                        problemEl.className = 'diana-multiplicaciones-problem';
+
+                        // Center of the dartboard
+                        const centerDiv = document.createElement('div');
+                        centerDiv.className = 'diana-center';
+                        centerDiv.textContent = `${p.tableNumber}x`;
+                        problemEl.appendChild(centerDiv);
+
+                        // Inner Ring (numbers 1-10)
+                        const innerRingDiv = document.createElement('div');
+                        innerRingDiv.className = 'diana-ring inner';
+                        problemEl.appendChild(innerRingDiv);
+
+                        // Outer Ring (answers)
+                        const outerRingDiv = document.createElement('div');
+                        outerRingDiv.className = 'diana-ring outer';
+                        problemEl.appendChild(outerRingDiv);
+
+                        const numItems = 10;
+                        // Ajuste de radios para el nuevo 5% de reducción
+                        const innerRadius = 107.1; // 119 * 0.9
+                        const outerRadius = 170.1; // 189 * 0.9
+                        const angleStep = (2 * Math.PI) / numItems; // Radians per step
+
+                        for (let i = 0; i < numItems; i++) {
+                            // Calculate angle: start at top (-Math.PI/2 or 270 degrees), go clockwise
+                            const currentAngle = (-Math.PI / 2) + (i * angleStep); 
+
+                            // Inner ring numbers (1-10)
+                            const numDiv = document.createElement('div');
+                            numDiv.className = `diana-ring-item diana-number`;
+                            numDiv.textContent = i + 1; // Numbers 1 to 10
+
+                            // Position relative to the center of the inner ring
+                            const numX = innerRadius + innerRadius * Math.cos(currentAngle);
+                            const numY = innerRadius + innerRadius * Math.sin(currentAngle); 
+
+                            numDiv.style.left = `${numX}px`;
+                            numDiv.style.top = `${numY}px`;
+                            numDiv.style.transform = 'translate(-50%, -50%)'; // Keep numbers straight
+                            innerRingDiv.appendChild(numDiv);
+
+                            // Outer ring answer boxes
+                            const answerBoxDiv = document.createElement('div');
+                            answerBoxDiv.className = `diana-ring-item diana-answer-box`;
+                            const answerInput = document.createElement('input');
+                            answerInput.type = 'number';
+                            answerInput.readOnly = showAnswers;
+                            if (showAnswers) {
+                                answerInput.value = (i + 1) * p.tableNumber;
+                            }
+                            answerBoxDiv.appendChild(answerInput);
+
+                            // Position relative to the center of the outer ring
+                            const ansX = outerRadius + outerRadius * Math.cos(currentAngle);
+                            const ansY = outerRadius + outerRadius * Math.sin(currentAngle); 
+
+                            answerBoxDiv.style.left = `${ansX}px`;
+                            answerBoxDiv.style.top = `${ansY}px`;
+                            answerBoxDiv.style.transform = 'translate(-50%, -50%)'; // Keep inputs/answers straight
+                            outerRingDiv.appendChild(answerBoxDiv);
+                        }
+                    } else {
+                        // Renderizado para operaciones matemáticas normales (sumas, restas, multiplicaciones)
+                        problemEl.className = 'problem-math-wrapper';
+                        problemEl.innerHTML = `
+                            <div class="problem-line">
+                                <span class="number-operand-top">${p.num1}</span>
+                            </div>
+                            <div class="problem-line problem-line-bottom">
+                                <span class="operator-operand">${p.operator}</span>
+                                <span class="number-operand-bottom">${p.num2}</span>
+                            </div>
+                            <div class="result-line-display">
+                                ${showAnswers ? `<span class="result-number">${p.answer}</span>` : '<span class="empty-result-space"></span>'}
+                            </div>
+                        `;
+                    }
+                    problemsContainer.appendChild(problemEl);
+                });
+            };
+
+            const updateOperationControls = () => {
+                operationButtonsContainer.querySelectorAll('button').forEach(btn => {
+                    const value = btn.dataset.value;
+                    if (value === state.operation) {
+                        btn.className = 'control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-blue-600 text-white shadow-md selected';
+                        if (!btn.querySelector('.check-icon')) btn.insertAdjacentHTML('beforeend', checkIconSvg);
+                    } else {
+                           btn.className = 'control-button w-full text-left p-3 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between bg-gray-200 text-gray-800 hover:bg-gray-300';
+                           const icon = btn.querySelector('.check-icon');
+                           if (icon) icon.remove();
+                    }
+                });
+                const isMultiplication = state.operation === 'multiplicacion';
+                const isSeries = state.operation === 'series'; 
+                const isPyramid = state.operation === 'pyramid'; // Nuevo
+                const isTablaNumerica = state.operation === 'tabla-numerica'; // Nuevo
+                const isDianaMultiplicaciones = state.operation === 'diana-multiplicaciones'; // Nuevo
+
+                multiplicationTablesContainer.classList.toggle('opacity-30', !(isMultiplication || isDianaMultiplicaciones));
+                multiplicationTablesContainer.querySelectorAll('button').forEach(btn => btn.disabled = !(isMultiplication || isDianaMultiplicaciones));
+
+                // Controlar visibilidad y estado de los controles de Series
+                seriesControlsWrapper.classList.toggle('opacity-30', !isSeries);
+                randomSeriesCheckbox.disabled = !isSeries;
+                const disableManualSeriesControls = !isSeries || state.randomSeriesMode;
+                seriesPatternButtonsContainer.querySelectorAll('button').forEach(btn => btn.disabled = disableManualSeriesControls);
+                seriesDirectionButtonsContainer.querySelectorAll('button').forEach(btn => btn.disabled = disableManualSeriesControls);
+                seriesStartRangeSliderContainer.classList.toggle('opacity-30', !isSeries);
+                seriesStartRangeSlider.disabled = !isSeries;
+                seriesStartRangeLabel.classList.toggle('text-gray-400', !isSeries);
+
+                // Controlar visibilidad y estado de los controles de Pirámides
+                pyramidSizeButtonsContainer.classList.toggle('opacity-30', !isPyramid);
+                pyramidSizeButtonsContainer.querySelectorAll('button').forEach(btn => btn.disabled = !isPyramid);
+
+                // Controlar visibilidad y estado de los controles de Tabla Numérica
+                tablaNumericaControls.classList.toggle('opacity-30', !isTablaNumerica);
+                tablaNumericaControls.querySelectorAll('button').forEach(btn => btn.disabled = !isTablaNumerica);
+
+                // Ocultar el selector de cantidad de problemas y dígitos para Series, Pirámides, Tabla Numérica y Diana Multiplicaciones
+                numProblemsButtonsContainer.closest('div').style.display = (isSeries || isPyramid || isTablaNumerica || isDianaMultiplicaciones) ? 'none' : 'grid'; 
+                digitButtonsContainer.closest('div').style.display = (isSeries || isPyramid || isTablaNumerica || isDianaMultiplicaciones) ? 'none' : 'flex';
+
+
+                // Llama a updateDigitControls para manejar la deshabilitación del botón de 3 dígitos para pirámides
+                updateDigitControls();
+                updateTablaNumericaControls(); // Actualiza los botones de Tabla Numérica
+            };
+            
+            const updateDigitControls = () => {
+                const isTablaNumericaOperation = state.operation === 'tabla-numerica'; 
+                const isDianaMultiplicaciones = state.operation === 'diana-multiplicaciones';
+                digitButtonsContainer.querySelectorAll('button').forEach(btn => {
+                    const digitValue = parseInt(btn.dataset.value);
+                    const isPyramidOperation = state.operation === 'pyramid';
+                    let shouldBeDisabled = false;
+
+                    if (isPyramidOperation) {
+                        // Deshabilitar 1-dígito para pirámides 4-2-1
+                        if (digitValue === 1 && state.pyramidSize === '4-2-1') {
+                            shouldBeDisabled = true;
+                        }
+                        // Deshabilitar siempre 2-dígitos para pirámides
+                        if (digitValue === 2) {
+                            shouldBeDisabled = true;
+                        }
+                        // Deshabilitar siempre 3-dígitos para pirámides
+                        if (digitValue === 3) {
+                            shouldBeDisabled = true;
+                        }
+                    } else if (isTablaNumericaOperation || isDianaMultiplicaciones) {
+                        // Deshabilitar siempre los dígitos para Tabla Numérica y Diana Multiplicaciones (no aplican)
+                        shouldBeDisabled = true;
+                    }
+
+
+                    if (shouldBeDisabled) {
+                        btn.disabled = true;
+                        btn.classList.remove('bg-blue-600', 'text-white', 'shadow-md', 'bg-gray-200', 'text-gray-800');
+                        btn.classList.add('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                        // Si el recuento de dígitos seleccionado actualmente se deshabilita, cambiar a uno válido
+                        if (parseInt(state.digits) === digitValue) {
+                            // Buscar la siguiente opción de dígito disponible
+                            const availableDigits = Array.from(digitButtonsContainer.querySelectorAll('button'))
+                                .filter(b => !b.disabled)
+                                .map(b => parseInt(b.dataset.value));
+                            if (availableDigits.length > 0) {
+                                state.digits = String(availableDigits[0]); // Elegir el primero disponible
+                            } else {
+                                // Fallback si no hay opciones válidas (no debería ocurrir con 1/2 dígitos siempre habilitados para operaciones que no sean pirámides)
+                                state.digits = '1';
+                            }
+                        }
+                    } else {
+                        btn.disabled = false; // Habilitar los botones por defecto
+                        btn.classList.remove('bg-gray-300', 'text-gray-500', 'cursor-not-allowed');
+                        btn.classList.toggle('bg-blue-600', digitValue === parseInt(state.digits));
+                        btn.classList.toggle('text-white', digitValue === parseInt(state.digits));
+                        btn.classList.toggle('shadow-md', digitValue === parseInt(state.digits));
+                        btn.classList.toggle('bg-gray-200', digitValue !== parseInt(state.digits));
+                        btn.classList.toggle('text-gray-800', digitValue !== parseInt(state.digits));
+                    }
+                });
+                // Ocultar el selector de dígitos para Tabla Numérica y Diana Multiplicaciones
+                digitButtonsContainer.closest('div').style.display = (isTablaNumericaOperation || isDianaMultiplicaciones) ? 'none' : 'flex';
+            };
+
+            const updateNumProblemsControls = () => {
+                numProblemsButtonsContainer.querySelectorAll('button').forEach(btn => {
+                    btn.classList.toggle('bg-blue-600', parseInt(btn.dataset.value) === state.numProblems);
+                    btn.classList.toggle('text-white', parseInt(btn.dataset.value) === state.numProblems);
+                    btn.classList.toggle('shadow-md', parseInt(btn.dataset.value) === state.numProblems);
+                    btn.classList.toggle('bg-gray-200', parseInt(btn.dataset.value) !== state.numProblems);
+                    btn.classList.toggle('text-gray-800', btn.dataset.value !== state.problems);
+                });
+            };
+
+            const renderTableButtons = () => {
+                 multiplicationTablesContainer.innerHTML = '';
+                 for (let i = 0; i < 10; i++) {
+                    const tableBtn = document.createElement('button');
+                    tableBtn.textContent = i + 1;
+                    tableBtn.dataset.index = i;
+                    tableBtn.className = `p-3 rounded-lg text-center transition-colors duration-200 font-medium ${state.tables[i] ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`;
+                    tableBtn.disabled = !(state.operation === 'multiplicacion' || state.operation === 'diana-multiplicaciones');
+                    multiplicationTablesContainer.appendChild(tableBtn);
+                 }
+            };
+            
+            const renderSeriesPatternButtons = () => {
+                seriesPatternButtonsContainer.innerHTML = '';
+                for (let i = 0; i < 10; i++) { 
+                    const patternValue = i + 1; 
+                    const patternBtn = document.createElement('button');
+                    patternBtn.textContent = patternValue;
+                    patternBtn.dataset.index = i; 
+                    patternBtn.className = `p-3 rounded-lg text-center transition-colors duration-200 font-medium ${state.seriesPatterns[i] && !state.randomSeriesMode ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`;
+                    patternBtn.disabled = state.operation !== 'series' || state.randomSeriesMode; 
+                    seriesPatternButtonsContainer.appendChild(patternBtn);
+                }
+            };
+
+            const renderSeriesDirectionButtons = () => {
+                seriesDirectionButtonsContainer.innerHTML = '';
+                const directions = ['progresiva', 'regresiva'];
+                const labels = { 'progresiva': 'Progresiva (+)', 'regresiva': 'Regresiva (-)' };
+
+                directions.forEach(direction => {
+                    const directionBtn = document.createElement('button');
+                    directionBtn.textContent = labels[direction];
+                    directionBtn.dataset.value = direction;
+                    const isSelected = state.seriesDirections.includes(direction);
+                    directionBtn.className = `series-direction-button flex-1 p-3 rounded-lg transition-all duration-200 text-sm font-medium ${isSelected && !state.randomSeriesMode ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'}`;
+                    directionBtn.disabled = state.operation !== 'series' || state.randomSeriesMode; 
+                    seriesDirectionButtonsContainer.appendChild(directionBtn);
+                });
+            };
+
+            const updateSeriesStartRangeSlider = () => {
+                seriesStartRangeSlider.value = state.seriesStartMaxDecade;
+                const minRangeVal = state.seriesStartMaxDecade * 10;
+                const maxRangeVal = (state.seriesStartMaxDecade * 10) + 9;
+                seriesStartRangeLabel.textContent = `${minRangeVal} - ${maxRangeVal}`;
+            };
+
+            // Nuevo: renderizado y actualización de botones de tamaño de pirámide
+            const renderPyramidSizeButtons = () => {
+                pyramidSizeButtonsContainer.innerHTML = '';
+                const sizes = ['2-1', '4-2-1']; // Solo estas dos opciones
+                sizes.forEach(size => {
+                    const sizeBtn = document.createElement('button');
+                    sizeBtn.textContent = size;
+                    sizeBtn.dataset.value = size;
+                    const isSelected = state.pyramidSize === size;
+                    sizeBtn.className = `pyramid-size-button p-3 rounded-lg text-center transition-colors duration-200 text-sm font-medium ${isSelected ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`;
+                    sizeBtn.disabled = state.operation !== 'pyramid';
+                    pyramidSizeButtonsContainer.appendChild(sizeBtn);
+                });
+            };
+
+            // Nuevo: renderizado y actualización de botones de tabla numérica
+            const updateTablaNumericaControls = () => {
+                tablaNumericaControls.querySelectorAll('button').forEach(btn => {
+                    const value = btn.dataset.value;
+                    btn.classList.toggle('bg-blue-600', value === state.tablaNumericaType);
+                    btn.classList.toggle('text-white', value === state.tablaNumericaType);
+                    btn.classList.toggle('shadow-md', value === state.tablaNumericaType);
+                    btn.classList.toggle('bg-gray-200', value !== state.tablaNumericaType);
+                    btn.classList.toggle('text-gray-800', value !== state.tablaNumericaType);
+                });
+            };
+
+
+            // --- Event Listeners ---
+            operationButtonsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button) {
+                    state.operation = button.dataset.value;
+                    updateOperationControls(); // Esto llamará a updateDigitControls internamente
+                    renderSeriesPatternButtons(); 
+                    renderSeriesDirectionButtons(); 
+                    updateSeriesStartRangeSlider(); // Actualiza el slider de rango de inicio
+                    renderPyramidSizeButtons(); // Actualiza los botones de tamaño de pirámide
+                    updateTablaNumericaControls(); // Actualiza los botones de Tabla Numérica
+                    generateProblems(); 
+                }
+            });
+
+            digitButtonsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && !button.disabled) { // Solo permite el clic si el botón no está deshabilitado
+                    state.digits = button.dataset.value;
+                    updateDigitControls();
+                    generateProblems(); 
+                }
+            });
+            
+            numProblemsButtonsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button) {
+                    state.numProblems = parseInt(button.dataset.value);
+                    updateNumProblemsControls();
+                    generateProblems(); 
+                }
+            });
+
+            multiplicationTablesContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && (state.operation === 'multiplicacion' || state.operation === 'diana-multiplicaciones')) {
+                    const index = parseInt(button.dataset.index);
+                    state.tables[index] = !state.tables[index];
+                    button.classList.toggle('bg-blue-500');
+                    button.classList.toggle('text-white');
+                    button.classList.toggle('bg-gray-200');
+                    button.classList.toggle('text-gray-700');
+                    generateProblems();
+                }
+            });
+
+            seriesPatternButtonsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && state.operation === 'series' && !state.randomSeriesMode) { 
+                    const index = parseInt(button.dataset.index);
+                    state.seriesPatterns[index] = !state.seriesPatterns[index]; 
+                    renderSeriesPatternButtons(); 
+                    generateProblems();
+                }
+            });
+
+            seriesDirectionButtonsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && state.operation === 'series' && !state.randomSeriesMode) { 
+                    const value = button.dataset.value;
+                    const index = state.seriesDirections.indexOf(value);
+                    if (index > -1) {
+                        state.seriesDirections.splice(index, 1); 
+                    } else {
+                        state.seriesDirections.push(value); 
+                    }
+                    renderSeriesDirectionButtons(); 
+                    generateProblems();
+                }
+            });
+
+            // Event Listener para el checkbox aleatorio de series
+            randomSeriesCheckbox.addEventListener('change', (e) => {
+                state.randomSeriesMode = e.target.checked;
+                updateOperationControls(); 
+                renderSeriesPatternButtons(); 
+                renderSeriesDirectionButtons(); 
+                generateProblems(); 
+            });
+
+            // Event Listener para el slider de rango de inicio de series
+            seriesStartRangeSlider.addEventListener('input', (e) => {
+                state.seriesStartMaxDecade = parseInt(e.target.value);
+                updateSeriesStartRangeSlider(); 
+                generateProblems(); 
+            });
+
+            // Nuevo: Event Listener para los botones de tamaño de pirámide
+            pyramidSizeButtonsContainer.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && state.operation === 'pyramid') {
+                    state.pyramidSize = button.dataset.value;
+                    renderPyramidSizeButtons(); // Actualiza el estilo del botón seleccionado
+                    generateProblems(); // Genera una nueva hoja con el nuevo tamaño
+                }
+            });
+
+            // Nuevo: Event Listener para los botones de tabla numérica
+            tablaNumericaControls.addEventListener('click', (e) => {
+                const button = e.target.closest('button');
+                if (button && state.operation === 'tabla-numerica') {
+                    state.tablaNumericaType = button.dataset.value;
+                    updateTablaNumericaControls(); // Actualiza el estilo del botón seleccionado
+                    generateProblems(); 
+                }
+            });
+
+
+            generateBtn.addEventListener('click', () => generateProblems()); // Llama directamente a generateProblems para resetear y crear una nueva hoja
+
+            downloadBtn.addEventListener('click', () => {
+                if (state.problems.length === 0) {
+                    showAlert("Primero genera una hoja de trabajo para poder descargarla.");
+                    return;
+                }
+                
+                showLoading("Generando hoja de trabajo...", "Esto puede tardar unos segundos.");
+                
+                // Modificar el título de la hoja de trabajo para que sea solo texto
+                worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`;
+                worksheetTitle.style.visibility = 'visible';
+                worksheetTitle.style.position = 'static';
+                worksheetTitle.style.marginBottom = '2rem'; 
+                worksheetTitle.style.display = 'block'; // Restablecer a block para centrado de texto
+                worksheetTitle.style.alignItems = ''; // Eliminar alineación de items
+                worksheetTitle.style.justifyContent = ''; // Eliminar justificación de contenido
+
+                renderProblems(state.problems, false); 
+
+                const controlsPanel = document.querySelector('.grid-cols-1.lg\\:grid-cols-3.gap-6.mb-8');
+                const actionButtons = document.querySelector('.flex.flex-col.sm\\:flex-row.items-center');
+                const originalControlsDisplay = controlsPanel.style.display;
+                const originalActionButtonsDisplay = actionButtons.style.display;
+
+                controlsPanel.style.display = 'none';
+                actionButtons.style.display = 'none';
+
+                html2canvas(worksheet, { 
+                    scale: 3, 
+                    useCORS: true 
+                }).then((canvas) => {
+                    // Restablecer el título original después de la captura
+                    worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`; 
+                    worksheetTitle.style.visibility = 'hidden';
+                    worksheetTitle.style.position = 'absolute';
+                    worksheetTitle.style.marginBottom = ''; 
+                    worksheetTitle.style.display = ''; // Restablecer display
+                    worksheetTitle.style.alignItems = '';
+                    worksheetTitle.style.justifyContent = '';
+
+                    controlsPanel.style.display = originalControlsDisplay; 
+                    actionButtons.style.display = originalActionButtonsDisplay; 
+
+                    const imgData = canvas.toDataURL('image/png');
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({
+                        orientation: 'portrait',
+                        unit: 'mm', 
+                        format: 'a4'
+                    });
+                    
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = pdf.internal.pageSize.getHeight();
+
+                    let imgWidth = pdfWidth - 20; 
+                    let imgHeight = (canvas.height * imgWidth) / canvas.width; 
+
+                    let currentY = 10; 
+
+                    if (imgHeight > pdfHeight - 20) {
+                        let pageCount = 0;
+                        let remainingCanvasHeight = canvas.height;
+                        let currentCanvasY = 0; 
+
+                        while (remainingCanvasHeight > 0) {
+                            if (pageCount > 0) {
+                                pdf.addPage();
+                                currentY = 10; 
+                            }
+                            
+                            const heightPerPagePx = (pdfHeight - 20) * (canvas.width / imgWidth); 
+                            const clipHeight = Math.min(remainingCanvasHeight, heightPerPagePx);
+
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = canvas.width;
+                            tempCanvas.height = clipHeight;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            tempCtx.drawImage(canvas, 0, currentCanvasY, canvas.width, clipHeight, 0, 0, canvas.width, clipHeight);
+
+                            const tempImgData = tempCanvas.toDataURL('image/png');
+                            const tempImgHeightInMm = (clipHeight * imgWidth) / canvas.width;
+
+                            pdf.addImage(tempImgData, 'PNG', 10, currentY, imgWidth, tempImgHeightInMm);
+
+                            remainingCanvasHeight -= clipHeight;
+                            currentCanvasY += clipHeight;
+                            pageCount++;
+                        }
+                    } else {
+                        const xOffset = (pdfWidth - imgWidth) / 2;
+                        const yOffset = (pdfHeight - imgHeight) / 2;
+                        pdf.addImage(imgData, "PNG", xOffset, yOffset, imgWidth, imgHeight);
+                    }
+                    pdf.save('hoja_de_matematicas_A4.pdf');
+                    hideLoading(); // Ocultar después de guardar
+                }).catch(error => {
+                    console.error("Error al generar el PDF:", error);
+                    showAlert("Ocurrió un error al generar el PDF. Por favor, inténtalo de nuevo.");
+                    hideLoading(); // Ocultar incluso si hay error
+                });
+            });
+
+            downloadAnswersBtn.addEventListener('click', () => {
+                if (state.problems.length === 0) {
+                    showAlert("Primero genera una hoja de trabajo para poder descargarla con respuestas.");
+                    return;
+                }
+
+                showLoading("Generando hoja de respuestas...", "Esto puede tardar unos segundos.");
+                
+                // Modificar el título de la hoja de trabajo para que sea solo texto
+                worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`;
+                worksheetTitle.style.visibility = 'visible';
+                worksheetTitle.style.position = 'static';
+                worksheetTitle.style.marginBottom = '2rem'; 
+                worksheetTitle.style.display = 'block'; // Restablecer a block para centrado de texto
+                worksheetTitle.style.alignItems = ''; // Eliminar alineación de items
+                worksheetTitle.style.justifyContent = ''; // Eliminar justificación de contenido
+
+                renderProblems(state.problems, true); 
+
+                const controlsPanel = document.querySelector('.grid-cols-1.lg\\:grid-cols-3.gap-6.mb-8');
+                const actionButtons = document.querySelector('.flex.flex-col.sm\\:flex-row.items-center');
+                const originalControlsDisplay = controlsPanel.style.display;
+                const originalActionButtonsDisplay = actionButtons.style.display;
+
+                controlsPanel.style.display = 'none';
+                actionButtons.style.display = 'none';
+
+                html2canvas(worksheet, { 
+                    scale: 3, 
+                    useCORS: true 
+                }).then((canvas) => {
+                    // Restablecer el título original después de la captura
+                    worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`; 
+                    worksheetTitle.style.visibility = 'hidden';
+                    worksheetTitle.style.position = 'absolute';
+                    worksheetTitle.style.marginBottom = ''; 
+                    worksheetTitle.style.display = ''; // Restablecer display
+                    worksheetTitle.style.alignItems = '';
+                    worksheetTitle.style.justifyContent = '';
+
+                    renderProblems(state.problems, false); 
+
+                    const imgData = canvas.toDataURL('image/png');
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF({
+                        orientation: 'portrait',
+                        unit: 'mm', 
+                        format: 'a4'
+                    });
+                    
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = pdf.internal.pageSize.getHeight();
+
+                    let imgWidth = pdfWidth - 20; 
+                    let imgHeight = (canvas.height * imgWidth) / canvas.width; 
+
+                    let currentY = 10; 
+
+                    if (imgHeight > pdfHeight - 20) {
+                        let pageCount = 0;
+                        let remainingCanvasHeight = canvas.height;
+                        let currentCanvasY = 0; 
+
+                        while (remainingCanvasHeight > 0) {
+                            if (pageCount > 0) {
+                                pdf.addPage();
+                                currentY = 10; 
+                            }
+                            
+                            const heightPerPagePx = (pdfHeight - 20) * (canvas.width / imgWidth); 
+                            const clipHeight = Math.min(remainingCanvasHeight, heightPerPagePx);
+
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = canvas.width;
+                            tempCanvas.height = clipHeight;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            tempCtx.drawImage(canvas, 0, currentCanvasY, canvas.width, clipHeight, 0, 0, canvas.width, clipHeight);
+
+                            const tempImgData = tempCanvas.toDataURL('image/png');
+                            const tempImgHeightInMm = (clipHeight * imgWidth) / canvas.width;
+
+                            pdf.addImage(tempImgData, 'PNG', 10, currentY, imgWidth, tempImgHeightInMm);
+
+                            remainingCanvasHeight -= clipHeight;
+                            currentCanvasY += clipHeight;
+                            pageCount++;
+                        }
+                    } else {
+                        const xOffset = (pdfWidth - imgWidth) / 2;
+                        const yOffset = (pdfHeight - imgHeight) / 2;
+                        pdf.addImage(imgData, "PNG", xOffset, yOffset, imgWidth, imgHeight);
+                    }
+                    pdf.save('hoja_de_matematicas_con_respuestas_A4.pdf');
+                    hideLoading(); // Ocultar después de guardar
+                }).catch(error => {
+                    console.error("Error al generar el PDF con respuestas:", error);
+                    showAlert("Ocurrió un error al generar el PDF con respuestas. Por favor, inténtalo de nuevo.");
+                    hideLoading(); // Ocultar incluso si hay error
+                });
+            });
+
+
+            alertCloseBtn.addEventListener('click', () => {
+                alertModal.classList.remove('visible');
+            });
+
+            // --- Inicialización ---
+            renderTableButtons();
+            renderSeriesPatternButtons();
+            renderSeriesDirectionButtons();
+            updateSeriesStartRangeSlider(); // Inicializa el slider y su etiqueta
+            renderPyramidSizeButtons(); // Inicializa los botones de tamaño de pirámide
+            updateOperationControls(); // Asegura que los controles correctos estén habilitados/deshabilitados
+            updateDigitControls(); // Llamada inicial para establecer el estado correcto de los botones de dígitos
+            updateTablaNumericaControls(); // Llamada inicial para establecer el estado correcto de los botones de tabla numérica
+            generateProblems(); 
+        });
+    </script>
+</body>
+</html>
