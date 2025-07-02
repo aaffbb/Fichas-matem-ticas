@@ -1775,6 +1775,58 @@
 
             generateBtn.addEventListener('click', () => generateProblems()); // Llama directamente a generateProblems para resetear y crear una nueva hoja
 
+            const prepareWorksheetForPDF = (showAnswers) => {
+                // Store original styles of worksheet to revert later
+                worksheet.originalStyle = worksheet.style.cssText;
+                
+                // Apply A4 dimensions and padding for consistent PDF rendering
+                worksheet.style.width = '210mm'; // A4 width
+                worksheet.style.maxWidth = '210mm'; // Ensure it doesn't expand beyond A4 width
+                worksheet.style.padding = '10mm'; // Add padding to mimic PDF margins
+                worksheet.style.boxSizing = 'border-box'; // Ensure padding is included in total width/height
+                worksheet.style.overflow = 'visible'; // Ensure all content is captured, even if it overflows initially
+
+                // Make title visible for PDF capture
+                worksheetTitle.style.visibility = 'visible';
+                worksheetTitle.style.position = 'static';
+                worksheetTitle.style.marginBottom = '2rem'; 
+                worksheetTitle.style.display = 'block';
+
+                // Hide controls and action buttons
+                const controlsPanel = document.querySelector('.grid-cols-1.lg\\:grid-cols-3.gap-6.mb-8');
+                const actionButtons = document.querySelector('.flex.flex-col.sm\\:flex-row.items-center');
+                controlsPanel.originalDisplay = controlsPanel.style.display;
+                actionButtons.originalDisplay = actionButtons.style.display;
+                controlsPanel.style.display = 'none';
+                actionButtons.style.display = 'none';
+
+                renderProblems(state.problems, showAnswers); // Render problems with/without answers
+            };
+
+            const restoreWorksheetFromPDF = () => {
+                // Restore original styles of worksheet
+                worksheet.style.cssText = worksheet.originalStyle || '';
+                worksheet.style.width = '';
+                worksheet.style.maxWidth = '';
+                worksheet.style.padding = '';
+                worksheet.style.boxSizing = '';
+                worksheet.style.overflow = '';
+
+                // Restore title visibility
+                worksheetTitle.style.visibility = 'hidden';
+                worksheetTitle.style.position = 'absolute';
+                worksheetTitle.style.marginBottom = '';
+                worksheetTitle.style.display = '';
+
+                // Restore controls and action buttons
+                const controlsPanel = document.querySelector('.grid-cols-1.lg\\:grid-cols-3.gap-6.mb-8');
+                const actionButtons = document.querySelector('.flex.flex-col.sm\\:flex-row.items-center');
+                controlsPanel.style.display = controlsPanel.originalDisplay || '';
+                actionButtons.style.display = actionButtons.originalDisplay || '';
+
+                renderProblems(state.problems, false); // Re-render problems for screen without answers
+            };
+
             downloadBtn.addEventListener('click', () => {
                 if (state.problems.length === 0) {
                     showAlert("Primero genera una hoja de trabajo para poder descargarla.");
@@ -1783,40 +1835,13 @@
                 
                 showLoading("Generando hoja de trabajo...", "Esto puede tardar unos segundos.");
                 
-                // Modificar el título de la hoja de trabajo para que sea solo texto
-                worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`;
-                worksheetTitle.style.visibility = 'visible';
-                worksheetTitle.style.position = 'static';
-                worksheetTitle.style.marginBottom = '2rem'; 
-                worksheetTitle.style.display = 'block'; // Restablecer a block para centrado de texto
-                worksheetTitle.style.alignItems = ''; // Eliminar alineación de items
-                worksheetTitle.style.justifyContent = ''; // Eliminar justificación de contenido
-
-                renderProblems(state.problems, false); 
-
-                const controlsPanel = document.querySelector('.grid-cols-1.lg\\:grid-cols-3.gap-6.mb-8');
-                const actionButtons = document.querySelector('.flex.flex-col.sm\\:flex-row.items-center');
-                const originalControlsDisplay = controlsPanel.style.display;
-                const originalActionButtonsDisplay = actionButtons.style.display;
-
-                controlsPanel.style.display = 'none';
-                actionButtons.style.display = 'none';
+                prepareWorksheetForPDF(false); // Prepare for PDF without answers
 
                 html2canvas(worksheet, { 
                     scale: 3, 
                     useCORS: true 
                 }).then((canvas) => {
-                    // Restablecer el título original después de la captura
-                    worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`; 
-                    worksheetTitle.style.visibility = 'hidden';
-                    worksheetTitle.style.position = 'absolute';
-                    worksheetTitle.style.marginBottom = ''; 
-                    worksheetTitle.style.display = ''; // Restablecer display
-                    worksheetTitle.style.alignItems = '';
-                    worksheetTitle.style.justifyContent = '';
-
-                    controlsPanel.style.display = originalControlsDisplay; 
-                    actionButtons.style.display = originalActionButtonsDisplay; 
+                    restoreWorksheetFromPDF(); // Restore styles after capture
 
                     const imgData = canvas.toDataURL('image/png');
                     const { jsPDF } = window.jspdf;
@@ -1873,6 +1898,7 @@
                 }).catch(error => {
                     console.error("Error al generar el PDF:", error);
                     showAlert("Ocurrió un error al generar el PDF. Por favor, inténtalo de nuevo.");
+                    restoreWorksheetFromPDF(); // Restore styles even on error
                     hideLoading(); // Ocultar incluso si hay error
                 });
             });
@@ -1885,39 +1911,13 @@
 
                 showLoading("Generando hoja de respuestas...", "Esto puede tardar unos segundos.");
                 
-                // Modificar el título de la hoja de trabajo para que sea solo texto
-                worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`;
-                worksheetTitle.style.visibility = 'visible';
-                worksheetTitle.style.position = 'static';
-                worksheetTitle.style.marginBottom = '2rem'; 
-                worksheetTitle.style.display = 'block'; // Restablecer a block para centrado de texto
-                worksheetTitle.style.alignItems = ''; // Eliminar alineación de items
-                worksheetTitle.style.justifyContent = ''; // Eliminar justificación de contenido
-
-                renderProblems(state.problems, true); 
-
-                const controlsPanel = document.querySelector('.grid-cols-1.lg\\:grid-cols-3.gap-6.mb-8');
-                const actionButtons = document.querySelector('.flex.flex-col.sm\\:flex-row.items-center');
-                const originalControlsDisplay = controlsPanel.style.display;
-                const originalActionButtonsDisplay = actionButtons.style.display;
-
-                controlsPanel.style.display = 'none';
-                actionButtons.style.display = 'none';
+                prepareWorksheetForPDF(true); // Prepare for PDF with answers
 
                 html2canvas(worksheet, { 
                     scale: 3, 
                     useCORS: true 
                 }).then((canvas) => {
-                    // Restablecer el título original después de la captura
-                    worksheetTitle.innerHTML = `Hoja de Ejercicios de Matemáticas`; 
-                    worksheetTitle.style.visibility = 'hidden';
-                    worksheetTitle.style.position = 'absolute';
-                    worksheetTitle.style.marginBottom = ''; 
-                    worksheetTitle.style.display = ''; // Restablecer display
-                    worksheetTitle.style.alignItems = '';
-                    worksheetTitle.style.justifyContent = '';
-
-                    renderProblems(state.problems, false); 
+                    restoreWorksheetFromPDF(); // Restore styles after capture
 
                     const imgData = canvas.toDataURL('image/png');
                     const { jsPDF } = window.jspdf;
@@ -1974,6 +1974,7 @@
                 }).catch(error => {
                     console.error("Error al generar el PDF con respuestas:", error);
                     showAlert("Ocurrió un error al generar el PDF con respuestas. Por favor, inténtalo de nuevo.");
+                    restoreWorksheetFromPDF(); // Restore styles even on error
                     hideLoading(); // Ocultar incluso si hay error
                 });
             });
